@@ -7,11 +7,14 @@ import { User } from '../models/user.interface';
 import { UserEntity } from '../models/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class AuthService {
     constructor(
-        @InjectRepository(UserEntity) private readonly userRepository: Repository<UserEntity>
+        @InjectRepository(UserEntity) 
+        private readonly userRepository: Repository<UserEntity>,
+        private jwtService: JwtService
     ) {}
 
     hashPassword(password: string): Observable<string> {
@@ -35,6 +38,38 @@ export class AuthService {
                         return user;
                     }),
                 );
+            }),
+        );
+    }
+    
+    validateUser(email: string, password: string): Observable<User> {
+        return from(
+            this.userRepository.findOne({
+                where: { email }, // Kriteria pencarian
+                select: ['id', 'firstName', 'lastName', 'email', 'password', 'role'] // Opsi pengambilan data
+            })
+            ).pipe(
+            switchMap((user: User) => 
+                from(bcrypt.compare(password, user.password)).pipe(
+                    map((isValidPassword: boolean) => {
+                        if (isValidPassword) {
+                            delete user.password;
+                            return user;
+                        }
+                    }),
+                ),   
+            ),
+        );
+    }
+
+    login(user: User): Observable<string> {
+        const { email, password } = user;
+        return this.validateUser(email, password).pipe(
+            switchMap((user: User) => {
+                if (user) {
+                    // create JWT - credentials
+                    return from(this.jwtService.signAsync({ user }));
+                }
             }),
         );
     }
